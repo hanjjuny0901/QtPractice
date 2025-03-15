@@ -1,145 +1,121 @@
+# dock_app.py
 from PyQt5 import QtCore, QtWidgets, uic
-from PyQt5.QtCore import QPoint, QSize, QRect
+from free_mode_manager import FreeModeManager
+from dock_mode_manager import DockModeManager
+from constants import WIDGET_NAMES
 from widgets.test_options_tree import TestOptionsTreeWidget
 from widgets.test_case_table import TestCaseTableWidget
 from widgets.tool_list import ToolListWidget
 from widgets.plotly_graph import PlotlyGraphWidget
-from floating_widget import FloatingWidget
-from constants import WIDGET_NAMES
 
 class DockApp(QtWidgets.QMainWindow):
     WIDGETS = ["test_option", "test_cases", "tools", "graph"]
 
     def __init__(self):
         super().__init__()
-        self.settings = QtCore.QSettings("config.ini", QtCore.QSettings.IniFormat)
         
-        # Load UI file
-        uic.loadUi('main_window.ui', self)
-        
-        # Initialize widget variables
-        self.widget_dict = {name: None for name in self.WIDGETS}
-        self.free_mode_widget_states = {}
-        self.dock_mode_widget_states = {}
+        # 설정 초기화 (config.ini 사용)
+        settings_path = QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.AppConfigLocation)
+        settings_file = f"{settings_path}/config.ini"
+        self.settings = QtCore.QSettings(settings_file, QtCore.QSettings.IniFormat)
 
+        # UI 로드
+        uic.loadUi('main_window.ui', self)
+
+        # 자유 배치 및 도킹 모드 매니저 생성
+        self.free_mode_manager = FreeModeManager(
+            parent=self,
+            settings=self.settings,
+            widget_names=WIDGET_NAMES,
+            create_widget_content=self.create_widget_content,
+        )
+        
+        self.dock_mode_manager = DockModeManager(
+            parent=self,
+            settings=self.settings,
+            widget_names=WIDGET_NAMES,
+            create_widget_content=self.create_widget_content,
+        )
+
+        # 현재 활성화된 모드를 추적하는 플래그
+        self.is_free_mode_active = False
+
+        # 프로그램 초기화를 추적하는 플래그
+        self.is_initialized = True 
+
+        # 초기화 및 이벤트 연결
         self.initUI()
 
     def initUI(self):
-        # Connect action signals
+        """UI 초기화"""
+        
+        # 메뉴 액션 연결
         self.actionQuit.triggered.connect(self.close)
+        
+        # 모드 전환 액션 연결
         self.actionMode_1.triggered.connect(self.enable_free_mode)
-        self.actionMode_2.triggered.connect(self.enable_default_mode)
-        self.actionExport_2.triggered.connect(self.export_data)
-        self.actionVersion.triggered.connect(self.show_version)
+        self.actionMode_2.triggered.connect(self.enable_dock_mode)
 
-        # View 메뉴에 위젯 액션 추가
-        viewMenu = self.menuBar().findChild(QtWidgets.QMenu, "menuViews")
-        if viewMenu:
-            self.widget_actions = {}
-            for widget_name in self.WIDGETS:
-                action = QtWidgets.QAction(WIDGET_NAMES[widget_name], self, checkable=True)
-                action.triggered.connect(lambda checked, name=widget_name: self.toggle_widget(name, checked))
-                viewMenu.addAction(action)
-                self.widget_actions[widget_name] = action
+       # 마지막 모드 복원 (기본값: 자유 배치 모드)
+        last_mode = self.settings.value("last_mode", None)
+        if last_mode is None:
+            print("No mode found in settings. Defaulting to free mode.")
+            last_mode = "free_mode"
 
-        # Initialize widgets
-        self.init_widgets()
+        print(f"Restoring last mode: {last_mode}")  # 디버깅 메시지
 
-        # Set initial widget states
-        self.set_initial_widget_states()
-
-        # Load initial widget states from config.ini
-        self.load_widget_states_from_config()
-
-    def init_widgets(self):
-        def load_geometry(name, default_pos, default_size):
-            pos = self.settings.value(f"{name}_pos", default_pos, type=QPoint)
-            size = self.settings.value(f"{name}_size", default_size, type=QSize)
-            return pos, size
-
-        for widget_name in self.WIDGETS:
-            widget_content = self.create_widget_content(widget_name)
-            pos, size = load_geometry(widget_name, QPoint(50, 50), QSize(400, 300))
-            widget_content.setGeometry(QRect(pos.x(), pos.y(), size.width(), size.height()))
-            floating_widget = FloatingWidget(WIDGET_NAMES[widget_name], parent=self.centralwidget)
-            floating_widget.setWidget(widget_content)
-            floating_widget.setObjectName(widget_name)
-            floating_widget.hide()
-            self.widget_dict[widget_name] = floating_widget
+        if last_mode == "dock_mode":
+            self.enable_dock_mode()
+        else:
+            self.enable_free_mode()
 
     def create_widget_content(self, widget_name):
-        """Create the content for each widget."""
-        if widget_name == "test_option":
-            return TestOptionsTreeWidget()
-        elif widget_name == "test_cases":
-            return TestCaseTableWidget()
-        elif widget_name == "tools":
-            return ToolListWidget()
-        elif widget_name == "graph":
-            return PlotlyGraphWidget()
-
-    def set_initial_widget_states(self):
-        """Set initial visibility of widgets."""
-        for widget_name in self.WIDGETS:
-            visible = self.settings.value(f"{widget_name}_visible", True, type=bool)  # Default to visible=True
-            if visible:
-                self.widget_dict[widget_name].show()
-            else:
-                self.widget_dict[widget_name].hide()
-
-    def load_widget_states_from_config(self):
-        """Load widget states from config.ini."""
-        for mode_prefix in ["free_mode", "dock_mode"]:
-            for widget_name in self.WIDGETS:
-                name = f"{mode_prefix}_{widget_name}"
-                pos = self.settings.value(f"{name}_pos", None, type=QPoint)
-                size = self.settings.value(f"{name}_size", None, type=QSize)
-                if pos and size:
-                    state_dict = {"pos": pos, "size": size}
-                    if mode_prefix == "free_mode":
-                        self.free_mode_widget_states[widget_name] = state_dict
-                    elif mode_prefix == "dock_mode":
-                        self.dock_mode_widget_states[widget_name] = state_dict
+       """위젯 콘텐츠 생성"""
+       if widget_name == "test_option":
+           return TestOptionsTreeWidget()
+       elif widget_name == "test_cases":
+           return TestCaseTableWidget()
+       elif widget_name == "tools":
+           return ToolListWidget()
+       elif widget_name == "graph":
+           return PlotlyGraphWidget()
 
     def enable_free_mode(self):
-        print("Mode 1 (Free Positioning) Activated")
-    
-    def enable_default_mode(self):
-        print("Mode 2 (Default Docking) Activated")
-        
-        # Save current free mode states
-        self.save_widget_states(self.free_mode_widget_states)
-        
-        # Restore dock mode states
-        self.restore_widget_states(self.dock_mode_widget_states)
-        
-        # Enable nested docking
-        self.setDockNestingEnabled(True)
+       """자유 배치 모드 활성화"""
+       print("Switching to Free Mode")
+       self.is_free_mode_active = True  # 자유 배치 모드 활성화
 
-    def restore_widget_states(self, state_dict):
-        """Restore the position and size of widgets."""
-        for widget_name in state_dict.keys():
-            widget = self.widget_dict.get(widget_name)
-            if widget:
-                pos = state_dict[widget_name]['pos']
-                size = state_dict[widget_name]['size']
-                widget.setGeometry(QRect(pos, size))
+       if hasattr(self.dock_mode_manager, 'deactivate') and not getattr(self, "is_initialized", False):
+           self.dock_mode_manager.deactivate()
 
-    def save_widget_states(self, state_dict):
-        """Save the position and size of widgets."""
-        for widget_name in state_dict.keys():
-            widget = self.widget_dict.get(widget_name)
-            if widget:
-                state_dict[widget.objectName()] = {
-                    'pos': widget.pos(),
-                    'size': widget.size()
-                }
+       self.is_initialized = False
+       # 자유 배치 모드 활성화
+       self.free_mode_manager.initialize_widgets()
+       self.free_mode_manager.activate()
 
-    def toggle_widget(self, name: str, checked: bool):
-       pass
+    def enable_dock_mode(self):
+       """도킹 모드 활성화"""
+       print("Switching to Dock Mode")
+       self.is_free_mode_active = False  # 도킹 모드 활성화
 
-    def export_data(self):
-        print("Exporting data...")
-    
-    def show_version(self):
-        print("Showing version information...")
+       if hasattr(self.free_mode_manager, 'deactivate'):
+           self.free_mode_manager.deactivate()
+           
+       # 도킹 모드 활성화
+       self.dock_mode_manager.activate()
+
+    def closeEvent(self, event):
+       """애플리케이션 종료 시 상태 저장"""
+       
+       current_mode = "free_mode" if self.is_free_mode_active else "dock_mode"
+       
+       # 현재 모드 저장
+       self.settings.setValue("last_mode", current_mode)
+       print(f"Saving last mode: {current_mode}")  # 디버깅 메시지
+
+       if current_mode == "free_mode":
+           self.free_mode_manager.deactivate()
+       else:
+           self.dock_mode_manager.deactivate()
+
+       super().closeEvent(event)

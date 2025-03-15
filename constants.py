@@ -1,8 +1,8 @@
 WIDGET_NAMES = {
-    "test_option": "Test Option",
-    "test_cases": "Test Cases",
-    "tools": "Tools",
-    "graph": "Plotly Graph",
+    "test_option": "test_option",
+    "test_cases": "test_cases",
+    "tools": "tools",
+    "graph": "graph",
 }
 
 MODE_NAMES = {
