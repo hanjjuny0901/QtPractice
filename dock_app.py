@@ -84,11 +84,10 @@ class DockApp(QtWidgets.QMainWindow):
             sub_window.setWidget(widget)
             sub_window.setWindowTitle(WIDGET_NAMES[widget_name])
             self.mdi_area.addSubWindow(sub_window)
-            self.restore_mdi_state()
             sub_window.show()
 
-     #   if is_initialization:
-        #    self.restore_mdi_state()
+        self.restore_mdi_state()
+      #  if is_initialization:
 
     def enable_dock_mode(self, is_initialization=False):
         """도킹 모드 활성화"""
@@ -120,31 +119,32 @@ class DockApp(QtWidgets.QMainWindow):
             dock_widget.setWidget(widget)
             self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dock_widget)
 
-       # if is_initialization:
+   #     if is_initialization:
             dock_state = self.settings.value("dock_state")
             if dock_state:
                 print("Restoring dock mode state...")
                 self.restoreState(dock_state)
 
     def save_mdi_state(self):
-        """현재 MDI 서브 윈도우의 위치와 크기를 저장"""
-        mdi_state = {}
-        
-        for sub_window in self.mdi_area.subWindowList():
+        """현재 MDI 서브 윈도우의 위치와 크기 및 Z-Order를 저장"""
+        mdi_state = {"windows": []}
+
+        for sub_window in reversed(self.mdi_area.subWindowList(order=QMdiArea.StackingOrder)):
             widget_name = sub_window.windowTitle()
             geometry = sub_window.geometry()
-            
-            mdi_state[widget_name] = {
+
+            mdi_state["windows"].append({
+                "z_order": len(mdi_state["windows"]),  # Z-Order 저장
+                "name": widget_name,
                 "x": geometry.x(),
                 "y": geometry.y(),
                 "width": geometry.width(),
-                "height": geometry.height(),
-                "z_order": len(mdi_state["windows"])  
-            }
-        
+                "height": geometry.height()
+            })
+
         return mdi_state
 
-def restore_mdi_state(self):
+    def restore_mdi_state(self):
         """저장된 MDI 서브 윈도우의 위치와 크기 및 Z-Order를 복원"""
         
         mdi_state_json = self.settings.value("mdi_state", "{}")
@@ -157,13 +157,13 @@ def restore_mdi_state(self):
                 mdi_state_json = "{}"
 
         try:
-            mdi_state = json.loads(mdi_state_json)["windows"]
+            mdi_windows_data = json.loads(mdi_state_json)["windows"]
             
         except (json.JSONDecodeError, KeyError):
             print("MDI state JSON invalid. Using default empty state.")
             return
 
-        for window_data in mdi_state:
+        for window_data in mdi_windows_data:
             
             for sub_window in self.mdi_area.subWindowList():
                 if sub_window.windowTitle() == window_data["name"]:
@@ -175,6 +175,7 @@ def restore_mdi_state(self):
                             window_data["height"]
                         )
                     )
+                    sub_window.lower()  # Z-Order 복원 (맨 위로 올림)
                     break
 
     def closeEvent(self, event):
